@@ -22,11 +22,11 @@
 
     .card {
       background: #ffffff;
-      padding: 40px 32px;
-      border-radius: 20px;
+      padding: 36px 28px;
+      border-radius: 24px;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
       width: 90%;
-      max-width: 380px;
+      max-width: 400px;
       text-align: center;
       margin-bottom: 5vh;
     }
@@ -34,28 +34,53 @@
     .meta {
       font-size: 0.95rem;
       color: #64748b;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
+    /* 現在気温エリア */
     .current-section {
-      margin-bottom: 28px;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 24px;
     }
+
+    .temp-wrapper {
+      display: inline-flex;
+      align-items: baseline;
+    }
+
     .current-temp {
-      font-size: 4.8rem;
+      font-size: 4.6rem;
       font-weight: 700;
       color: #1e293b;
       line-height: 1;
     }
+
     .unit {
-      font-size: 2rem;
+      font-size: 1.8rem;
       color: #64748b;
       font-weight: 400;
+      margin-left: 2px;
     }
 
+    /* 今日の最高/最低気温（メイン気温の横・小さめ） */
+    .today-range {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    /* 気温差・過去データ比較リスト */
     .diff-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       border-top: 1px solid #e2e8f0;
       padding-top: 20px;
     }
@@ -64,15 +89,43 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 1.05rem;
+      font-size: 0.95rem;
       color: #475569;
+    }
+
+    .diff-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .diff-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
     .diff-value {
       font-weight: 700;
       font-size: 1.15rem;
+      min-width: 65px;
+      text-align: right;
     }
 
+    /* 最高・最低気温バッジ */
+    .temp-range {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .max-temp { color: #ef4444; }
+    .min-temp { color: #3b82f6; }
+
+    /* 差分カラー */
     .plus { color: #ef4444; }
     .minus { color: #3b82f6; }
     .zero { color: #64748b; }
@@ -83,19 +136,33 @@
   <div class="card">
     <div class="meta" id="location-time">現在地を取得中...</div>
 
+    <!-- メイン気温 ＋ 今日の最高/最低 -->
     <div class="current-section">
-      <span class="current-temp" id="current-temp">--</span>
-      <span class="unit">°C</span>
+      <div class="temp-wrapper">
+        <span class="current-temp" id="current-temp">--</span>
+        <span class="unit">°C</span>
+      </div>
+      <div class="today-range" id="today-range">
+        <span class="max-temp" id="today-max">--°</span>
+        <span class="min-temp" id="today-min">--°</span>
+      </div>
     </div>
 
+    <!-- 昨日・一昨日の比較 ＋ 最高/最低 -->
     <div class="diff-list">
       <div class="diff-item">
-        <span>昨日同時刻比</span>
-        <span class="diff-value" id="diff-yesterday">--</span>
+        <span class="diff-left">昨日同時刻比</span>
+        <div class="diff-right">
+          <span class="temp-range" id="range-yesterday">-- / --</span>
+          <span class="diff-value" id="diff-yesterday">--</span>
+        </div>
       </div>
       <div class="diff-item">
-        <span>一昨日同時刻比</span>
-        <span class="diff-value" id="diff-day-before">--</span>
+        <span class="diff-left">一昨日同時刻比</span>
+        <div class="diff-right">
+          <span class="temp-range" id="range-day-before">-- / --</span>
+          <span class="diff-value" id="diff-day-before">--</span>
+        </div>
       </div>
     </div>
   </div>
@@ -130,7 +197,7 @@
           fetchWeather(lat, lon, cityName);
         },
         (error) => {
-          console.warn('位置情報が取得できませんでした。デフォルト位置を表示します。', error);
+          console.warn('位置情報エラー、デフォルト位置を表示します。', error);
           fetchWeather(DEFAULT_LAT, DEFAULT_LON, DEFAULT_CITY);
         },
         { timeout: 10000 }
@@ -139,29 +206,22 @@
 
     async function fetchWeather(lat, lon, cityName) {
       try {
-        // past_days=2 で過去2日分＋今日以降の毎時気温データを取得
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&past_days=2&timezone=auto`;
+        // daily パラメータで最高・最低気温も同時に取得
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min&past_days=2&timezone=auto`;
         
         const res = await fetch(url);
         if (!res.ok) throw new Error('API取得エラー');
         const data = await res.json();
 
         const currentTemp = data.current.temperature_2m;
-        const currentTimeStr = data.current.time; // 例: "2026-08-19T21:45" または "2026-08-19T21:00"
+        const currentTimeStr = data.current.time;
 
-        // 分を切り捨てて現在の「時」の文字列を作成（例: "2026-08-19T21:00"）
-        const currentHourPrefix = currentTimeStr.slice(0, 13) + ':00';
-
+        // 毎時データから前日・前々日を検索
         const hourlyTimes = data.hourly.time;
         const hourlyTemps = data.hourly.temperature_2m;
         
-        // 前方一致で現在時刻のインデックスを確実に検索
         let currentIndex = hourlyTimes.findIndex(t => t.startsWith(currentTimeStr.slice(0, 13)));
-
-        // 見つからない場合のフォールバック（最新の有効データを使用）
-        if (currentIndex === -1) {
-          currentIndex = hourlyTimes.length - 1;
-        }
+        if (currentIndex === -1) currentIndex = hourlyTimes.length - 1;
 
         const yesterdayTemp = hourlyTemps[currentIndex - 24];
         const dayBeforeYesterdayTemp = hourlyTemps[currentIndex - 48];
@@ -169,7 +229,17 @@
         const diffYesterday = (yesterdayTemp !== undefined) ? (currentTemp - yesterdayTemp) : null;
         const diffDayBefore = (dayBeforeYesterdayTemp !== undefined) ? (currentTemp - dayBeforeYesterdayTemp) : null;
 
-        render(cityName, currentTemp, currentTimeStr, diffYesterday, diffDayBefore);
+        // 日別データ（past_days=2 の場合: index 0=一昨日, 1=昨日, 2=今日）
+        const maxTemps = data.daily.temperature_2m_max;
+        const minTemps = data.daily.temperature_2m_min;
+
+        const dailyStats = {
+          today: { max: maxTemps[2], min: minTemps[2] },
+          yesterday: { max: maxTemps[1], min: minTemps[1] },
+          dayBefore: { max: maxTemps[0], min: minTemps[0] }
+        };
+
+        render(cityName, currentTemp, currentTimeStr, diffYesterday, diffDayBefore, dailyStats);
 
       } catch (error) {
         console.error(error);
@@ -179,18 +249,18 @@
 
     function formatDiff(diff) {
       if (diff === null || diff === undefined || isNaN(diff)) return { text: '--', className: '' };
-      
       const rounded = Math.round(diff * 10) / 10;
-      if (rounded > 0) {
-        return { text: `+${rounded.toFixed(1)}°C`, className: 'plus' };
-      } else if (rounded < 0) {
-        return { text: `${rounded.toFixed(1)}°C`, className: 'minus' };
-      } else {
-        return { text: `±0.0°C`, className: 'zero' };
-      }
+      if (rounded > 0) return { text: `+${rounded.toFixed(1)}°C`, className: 'plus' };
+      if (rounded < 0) return { text: `${rounded.toFixed(1)}°C`, className: 'minus' };
+      return { text: `±0.0°C`, className: 'zero' };
     }
 
-    function render(cityName, currentTemp, timeStr, diff1, diff2) {
+    function formatRange(max, min) {
+      if (max === undefined || min === undefined) return '-- / --';
+      return `<span class="max-temp">${Math.round(max)}°</span> / <span class="min-temp">${Math.round(min)}°</span>`;
+    }
+
+    function render(cityName, currentTemp, timeStr, diff1, diff2, daily) {
       const date = new Date(timeStr);
       const hours = String(date.getHours()).padStart(2, '0');
       const minutes = String(date.getMinutes()).padStart(2, '0');
@@ -198,15 +268,25 @@
       document.getElementById('location-time').textContent = `${cityName} • ${hours}:${minutes} 時点`;
       document.getElementById('current-temp').textContent = currentTemp.toFixed(1);
 
+      // 今日の最高・最低
+      if (daily.today.max !== undefined) {
+        document.getElementById('today-max').textContent = `最高 ${Math.round(daily.today.max)}°`;
+        document.getElementById('today-min').textContent = `最低 ${Math.round(daily.today.min)}°`;
+      }
+
+      // 昨日同時刻比 ＆ 昨日の最高/最低
       const yesterday = formatDiff(diff1);
       const diffYesterdayEl = document.getElementById('diff-yesterday');
       diffYesterdayEl.textContent = yesterday.text;
       diffYesterdayEl.className = `diff-value ${yesterday.className}`;
+      document.getElementById('range-yesterday').innerHTML = formatRange(daily.yesterday.max, daily.yesterday.min);
 
+      // 一昨日同時刻比 ＆ 一昨日の最高/最低
       const dayBefore = formatDiff(diff2);
       const diffDayBeforeEl = document.getElementById('diff-day-before');
       diffDayBeforeEl.textContent = dayBefore.text;
       diffDayBeforeEl.className = `diff-value ${dayBefore.className}`;
+      document.getElementById('range-day-before').innerHTML = formatRange(daily.dayBefore.max, daily.dayBefore.min);
     }
 
     initApp();
