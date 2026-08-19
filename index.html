@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>現在地の気温比較アプリ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: #ffffff;
+      padding: 40px 32px;
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      width: 90%;
+      max-width: 380px;
+      text-align: center;
+      margin-bottom: 5vh;
+    }
+
+    .meta {
+      font-size: 0.95rem;
+      color: #64748b;
+      margin-bottom: 20px;
+    }
+
+    .current-section {
+      margin-bottom: 28px;
+    }
+    .current-temp {
+      font-size: 4.8rem;
+      font-weight: 700;
+      color: #1e293b;
+      line-height: 1;
+    }
+    .unit {
+      font-size: 2rem;
+      color: #64748b;
+      font-weight: 400;
+    }
+
+    .diff-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 20px;
+    }
+
+    .diff-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1.05rem;
+      color: #475569;
+    }
+
+    .diff-value {
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+
+    .plus { color: #ef4444; }
+    .minus { color: #3b82f6; }
+    .zero { color: #64748b; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="meta" id="location-time">現在地を取得中...</div>
+
+    <div class="current-section">
+      <span class="current-temp" id="current-temp">--</span>
+      <span class="unit">°C</span>
+    </div>
+
+    <div class="diff-list">
+      <div class="diff-item">
+        <span>昨日同時刻比</span>
+        <span class="diff-value" id="diff-yesterday">--</span>
+      </div>
+      <div class="diff-item">
+        <span>一昨日同時刻比</span>
+        <span class="diff-value" id="diff-day-before">--</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // デフォルト位置（位置情報が拒否された場合のフォールバック用：東京）
+    const DEFAULT_LAT = 35.6895;
+    const DEFAULT_LON = 139.6917;
+    const DEFAULT_CITY = '東京';
+
+    // 1. 端末の位置情報を取得
+    function initApp() {
+      if (!navigator.geolocation) {
+        // Geolocation非対応ブラウザの場合
+        fetchWeather(DEFAULT_LAT, DEFAULT_LON, DEFAULT_CITY);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          
+          // 逆ジオコーディングで市区町村名を取得（BigDataCloudの無料APIを利用）
+          let cityName = '現在地';
+          try {
+            const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ja`);
+            const geoData = await geoRes.json();
+            cityName = geoData.city || geoData.locality || geoData.principalSubdivision || '現在地';
+          } catch (e) {
+            console.warn('地名取得に失敗しました:', e);
+          }
+
+          fetchWeather(lat, lon, cityName);
+        },
+        (error) => {
+          console.warn('位置情報の取得が拒否されたか失敗しました。デフォルト位置を表示します。', error);
+          fetchWeather(DEFAULT_LAT, DEFAULT_LON, DEFAULT_CITY);
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+      );
+    }
+
+    // 2. Open-Meteo APIから気温を取得して計算
+    async function fetchWeather(lat, lon, cityName) {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&past_days=2&forecast_days=1&timezone=auto`;
+        
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('APIの取得に失敗しました');
+        const data = await res.json();
+
+        const currentTemp = data.current.temperature_2m;
+        const currentTimeStr = data.current.time;
+
+        const hourlyTimes = data.hourly.time;
+        const hourlyTemps = data.hourly.temperature_2m;
+        const currentIndex = hourlyTimes.indexOf(currentTimeStr);
+
+        if (currentIndex === -1) {
+          throw new Error('時間データが見つかりませんでした');
+        }
+
+        const yesterdayTemp = hourlyTemps[currentIndex - 24];
+        const dayBeforeYesterdayTemp = hourlyTemps[currentIndex - 48];
+
+        const diffYesterday = currentTemp - yesterdayTemp;
+        const diffDayBefore = currentTemp - dayBeforeYesterdayTemp;
+
+        render(cityName, currentTemp, currentTimeStr, diffYesterday, diffDayBefore);
+
+      } catch (error) {
+        console.error(error);
+        document.getElementById('location-time').textContent = '天気データの取得に失敗しました';
+      }
+    }
+
+    // 差分の書式設定
+    function formatDiff(diff) {
+      if (diff === undefined || isNaN(diff)) return { text: '--', className: '' };
+      
+      const rounded = Math.round(diff * 10) / 10;
+      if (rounded > 0) {
+        return { text: `+${rounded.toFixed(1)}°C`, className: 'plus' };
+      } else if (rounded < 0) {
+        return { text: `${rounded.toFixed(1)}°C`, className: 'minus' };
+      } else {
+        return { text: `±0.0°C`, className: 'zero' };
+      }
+    }
+
+    // 画面描画
+    function render(cityName, currentTemp, timeStr, diff1, diff2) {
+      const date = new Date(timeStr);
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+
+      document.getElementById('location-time').textContent = `${cityName} • ${hours}:${minutes} 時点`;
+      document.getElementById('current-temp').textContent = currentTemp.toFixed(1);
+
+      const yesterday = formatDiff(diff1);
+      const diffYesterdayEl = document.getElementById('diff-yesterday');
+      diffYesterdayEl.textContent = yesterday.text;
+      diffYesterdayEl.className = `diff-value ${yesterday.className}`;
+
+      const dayBefore = formatDiff(diff2);
+      const diffDayBeforeEl = document.getElementById('diff-day-before');
+      diffDayBeforeEl.textContent = dayBefore.text;
+      diffDayBeforeEl.className = `diff-value ${dayBefore.className}`;
+    }
+
+    // アプリ起動
+    initApp();
+  </script>
+</body>
+</html>
